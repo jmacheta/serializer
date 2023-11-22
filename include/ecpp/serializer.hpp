@@ -111,8 +111,8 @@ namespace ecpp {
     // requires(requires { serializer<T>::serialize; })
     constexpr auto serialize(T const& v, std::span<std::byte> ar, serial_opts o = serial_opts::none) noexcept {
         auto remaining = serializer_impl::serializer<T>::template serialize<true>(v, ar, o);
-
-        return ar.first(ar.size() - remaining.size());
+        return remaining;
+        // return (remaining.data() != nullptr) ? ar.first(ar.size() - remaining.size()) : std::span<std::byte>{};
     }
 
 } // namespace ecpp
