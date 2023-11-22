@@ -1,12 +1,14 @@
-#include <ecpp/serial.hpp>
+#include <ecpp/serializer.hpp>
 
+#include <array>
+#include <iostream>
+#include <vector>
 using namespace ecpp;
 
 // #include <iostream>
-struct foo
-{
+struct foo {
     char a;
-    int b[3];
+    int  b[3];
 
     using fields = serializable_fields<&foo::a, &foo::b>;
 };
@@ -16,26 +18,22 @@ struct foo
 //     return {};
 // }
 
-struct bar
-{
-    unsigned a;
-    unsigned b;
-    foo c;
-    unsigned d;
-    uint8_t e[2];
+struct bar {
+    unsigned             a;
+    unsigned             b;
+    foo                  c;
+    unsigned             d;
+    uint8_t              e[2];
     std::vector<uint8_t> f{4, 5, 6, 7};
 
-    using fields = serializable_fields<&bar::a, &bar::b, &bar::d, &bar::c,
-                                       &bar::e, &bar::f>;
+    using fields = serializable_fields<&bar::a, &bar::b, &bar::d, &bar::c, &bar::e, &bar::f>;
 };
 
-[[gnu::noinline]] auto do_serialize(auto const &x, std::span<std::byte> ar)
-{
+[[gnu::noinline]] auto do_serialize(auto const& x, std::span<std::byte> ar) {
     return serialize(x, ar);
 }
 
-auto do_serialize2(std::span<std::byte> ar, bar const &x)
-{
+auto do_serialize2(std::span<std::byte> ar, bar const& x) {
     auto aro = ar;
 
     std::memcpy(ar.data(), &x.a, sizeof(x.a));
@@ -58,27 +56,29 @@ auto do_serialize2(std::span<std::byte> ar, bar const &x)
     return aro.first(aro.size() - ar.size());
 }
 
-int main()
-{
+int main() {
     bar aaa{0xAABBCCDD, 0x11223344, {1, 2}, 0x88887777};
 
     foo ff{1, {2, 3}};
 
-    int f1[16]{};
+    uint8_t f1[10]{}; //{0xAA, 0xBB, 0xCC};
+    // f1.push_back(0xDD);
+    // f1.push_back(0x11);
+    // f1.push_back(0x22);
     // f1[0].push_back(0xAABBCCDD);
     // f1[0].push_back(0x11223344);
     // f1[0].push_back(0xFFEEDDCC);
     // f1[1].push_back(0x55667788);
 
-    std::array<uint8_t, 400> ar{};
-    auto sp = std::as_writable_bytes(std::span<uint8_t>{ar});
+    uint8_t ar[100]{};
+    auto    sp = std::as_writable_bytes(std::span<uint8_t>{ar});
 
     auto serialized = do_serialize(f1, sp);
-    // std::cout << "sizex: " << serialized.size() << "\n";
-    // for (auto r : serialized) {
-    //     std::cout << std::hex << (unsigned)r << ", ";
-    // }
-    // std::cout << "\n";
+    std::cout << "sizex: " << serialized.size() << "\n";
+    for (auto r : serialized) {
+        std::cout << std::hex << (unsigned)r << ", ";
+    }
+    std::cout << "\n";
 
     return serialized.size();
 }
