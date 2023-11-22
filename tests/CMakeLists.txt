@@ -9,7 +9,10 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(googletest)
 
-add_executable(serializer_ut serialization.cpp)
+add_executable(
+  serializer_ut composite_serialization.cpp containers_serialization.cpp
+                fundamental_types_serialization.cpp
+)
 
 target_link_libraries(serializer_ut PRIVATE ecpp::serializer GTest::gtest_main)
 target_link_options(serializer_ut PUBLIC -pthread)
