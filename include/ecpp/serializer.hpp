@@ -1,7 +1,6 @@
 #ifndef ECPP_SERIAL_HPP_
 #define ECPP_SERIAL_HPP_
 #include <ecpp/endian.hpp>
-#include <ecpp/serializer_options.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -11,36 +10,10 @@
 namespace ecpp {
 
     namespace serializer_impl {
-        template<typename T> struct element_count_if_fixed : std::integral_constant<std::size_t, 0> {};
-        template<typename T, std::size_t N> struct element_count_if_fixed<std::array<T, N>> : std::integral_constant<std::size_t, N> {};
-        template<typename T, std::size_t N> struct element_count_if_fixed<T[N]> : std::integral_constant<std::size_t, N> {};
-        template<typename T, std::size_t Extent>
-            requires(Extent != std::dynamic_extent)
-        struct element_count_if_fixed<std::span<T, Extent>> : std::integral_constant<std::size_t, Extent> {};
-
-        template<class T> inline constexpr std::size_t element_count_if_fixed_v = element_count_if_fixed<T>::value;
-
-
-        template<typename T> struct serializer;
-
         // Concept true for fundamental types
         template<typename T>
         concept fundamental = std::is_fundamental_v<std::remove_cvref_t<T>>;
 
-        template<fundamental T> struct serializer<T> {
-            constexpr static bool        has_fixed_size = true;
-            constexpr static std::size_t fixed_size     = sizeof(T);
-
-            template<bool CheckSize = false> constexpr static std::span<std::byte> serialize(T const& v, std::span<std::byte> in, opts o) noexcept {
-                if constexpr (CheckSize) {
-                    if (fixed_size > in.size())
-                        return {};
-                }
-
-                std::memcpy(in.data(), &v, fixed_size);
-                return in.subspan(fixed_size);
-            }
-        };
 
         template<typename T>
         concept range_iterable = std::is_array_v<T> || requires(T t) {
@@ -49,68 +22,115 @@ namespace ecpp {
             };
         };
 
+        /** @brief Provides access to number of elements in a fixed size containers, i.e. c-array, std::array, and std::span with non-dynamic extent. For other types the value is always 0
+         * @tparam T Type of the container.
+         */
+        template<typename T> struct element_count_if_fixed : std::integral_constant<std::size_t, 0> {};
 
-        template<range_iterable T> struct serializer<T> {
-            using value_type        = std::remove_reference_t<decltype(*std::begin(std::declval<T&>()))>;
-            using member_serializer = serializer<value_type>;
-
-            constexpr static std::size_t fixed_size     = element_count_if_fixed_v<T> * member_serializer::fixed_size;
-            constexpr static bool        has_fixed_size = (fixed_size != 0);
-
-            template<bool CheckSize = not has_fixed_size> constexpr static std::span<std::byte> serialize(T const& v, std::span<std::byte> in, opts o) noexcept {
-                if (CheckSize && member_serializer::has_fixed_size) {
-                    auto req_space = std::size(v) * member_serializer::fixed_size;
-                    if (req_space > in.size())
-                        return {};
-                }
-
-                std::ranges::for_each(v, [&](auto const& e) { in = member_serializer::serialize(e, in, o); });
-                return in;
-            }
-        };
+        template<typename T, std::size_t N> struct element_count_if_fixed<std::array<T, N>> : std::integral_constant<std::size_t, N> {};
+        template<typename T, std::size_t N> struct element_count_if_fixed<T[N]> : std::integral_constant<std::size_t, N> {};
+        template<typename T, std::size_t Extent>
+            requires(Extent != std::dynamic_extent)
+        struct element_count_if_fixed<std::span<T, Extent>> : std::integral_constant<std::size_t, Extent> {};
 
         template<typename T>
         concept has_field_descr = requires { typename T::fields; };
 
 
-        template<has_field_descr T> struct serializer<T> {
-            consteval static bool members_have_fixed_size() noexcept {
-                return std::apply([&](auto&&... args) { return ((serializer<member_t<args>>::fixed_size) && ...); }, T::fields::value);
-            }
-
-            consteval static std::size_t members_size() noexcept {
-                return std::apply([&](auto&&... args) { return ((serializer<member_t<args>>::size) + ...); }, T::fields::value);
-            }
-
-            constexpr static bool        has_fixed_size = members_have_fixed_size();
-            constexpr static std::size_t fixed_size     = has_fixed_size ? members_size() : 0;
-
-            template<bool CheckSize = not has_fixed_size> constexpr static std::span<std::byte> serialize(T const& v, std::span<std::byte> buffer, opts o) noexcept {
-                if constexpr (CheckSize) {
-                    if (fixed_size > buffer.size())
-                        return {};
-                }
-                std::apply([&](auto&&... args) { ((buffer = serializer<member_t<args>>::serialize(v.*args, buffer, o)), ...); }, T::fields::value);
-                return buffer;
-            }
-
-          private:
-            template<auto Ptr> using member_t = std::remove_cvref_t<decltype(std::declval<T>().*Ptr)>;
-        };
-
     } // namespace serializer_impl
+
+
+    enum class serializer_options {
+        none          = 0,
+        big_endian    = 1,
+        little_endian = 2,
+    };
+
+    constexpr serializer_options operator|(serializer_options lhs, serializer_options rhs) noexcept {
+        using u_t = typename std::underlying_type<serializer_options>::type;
+        return static_cast<serializer_options>(static_cast<u_t>(lhs) | static_cast<u_t>(rhs));
+    }
+
+
+    template<typename T> struct serializer;
+
+
+    template<serializer_impl::fundamental T> struct serializer<T> {
+        constexpr static bool        has_fixed_size = true;
+        constexpr static std::size_t fixed_size     = sizeof(T);
+
+        template<bool CheckSize = false> constexpr static std::span<std::byte> serialize(T const& v, std::span<std::byte> in, serializer_options o) noexcept {
+            if constexpr (CheckSize) {
+                if (fixed_size > in.size())
+                    return {};
+            }
+
+            if (o == serializer_options::big_endian) {
+                // todo
+            }
+
+
+            std::memcpy(in.data(), &v, fixed_size);
+            return in.subspan(fixed_size);
+        }
+    };
+
+
+    template<serializer_impl::range_iterable T> struct serializer<T> {
+        using value_type        = std::remove_reference_t<decltype(*std::begin(std::declval<T&>()))>;
+        using member_serializer = serializer<value_type>;
+
+        constexpr static std::size_t fixed_size     = serializer_impl::element_count_if_fixed<T>::value * member_serializer::fixed_size;
+        constexpr static bool        has_fixed_size = (fixed_size != 0);
+
+        template<bool CheckSize = not has_fixed_size> constexpr static std::span<std::byte> serialize(T const& v, std::span<std::byte> in, serializer_options o) noexcept {
+            // The check below makes sense only, when the value_type size is fixed.
+            if (CheckSize && member_serializer::has_fixed_size) {
+                auto req_space = std::size(v) * member_serializer::fixed_size;
+                if (req_space > in.size())
+                    return {};
+            }
+
+            std::ranges::for_each(v, [&](auto const& e) { in = member_serializer::serialize(e, in, o); });
+            return in;
+        }
+    };
+
+    template<serializer_impl::has_field_descr T> struct serializer<T> {
+        consteval static bool members_have_fixed_size() noexcept {
+            return std::apply([&](auto&&... args) { return ((serializer<member_t<args>>::fixed_size) && ...); }, T::fields::value);
+        }
+
+        consteval static std::size_t members_size() noexcept {
+            return std::apply([&](auto&&... args) { return ((serializer<member_t<args>>::size) + ...); }, T::fields::value);
+        }
+
+        constexpr static bool        has_fixed_size = members_have_fixed_size();
+        constexpr static std::size_t fixed_size     = has_fixed_size ? members_size() : 0;
+
+        template<bool CheckSize = not has_fixed_size> constexpr static std::span<std::byte> serialize(T const& v, std::span<std::byte> buffer, serializer_options o) noexcept {
+            if constexpr (CheckSize) {
+                if (fixed_size > buffer.size())
+                    return {};
+            }
+            std::apply([&](auto&&... args) { ((buffer = serializer<member_t<args>>::serialize(v.*args, buffer, o)), ...); }, T::fields::value);
+            return buffer;
+        }
+
+      private:
+        template<auto Ptr> using member_t = std::remove_cvref_t<decltype(std::declval<T>().*Ptr)>;
+    };
+
 
     template<auto... Ts> struct serializable_fields {
         constexpr static auto value = std::make_tuple(Ts...);
     };
 
-    using typename serializer_impl::serializer;
-    using serial_opts = serializer_impl::opts;
 
     template<typename T>
     // requires(requires { serializer<T>::serialize; })
-    constexpr auto serialize(T const& v, std::span<std::byte> ar, serial_opts o = serial_opts::none) noexcept {
-        auto remaining = serializer_impl::serializer<T>::template serialize<true>(v, ar, o);
+    constexpr auto serialize(T const& v, std::span<std::byte> ar, serializer_options o = serializer_options::none) noexcept {
+        auto remaining = serializer<T>::template serialize<true>(v, ar, o);
         return remaining;
         // return (remaining.data() != nullptr) ? ar.first(ar.size() - remaining.size()) : std::span<std::byte>{};
     }
