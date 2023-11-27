@@ -14,7 +14,7 @@ add_executable(
                 fundamental_types_serialization.cpp
 )
 
-target_link_libraries(serializer_ut PRIVATE ecpp::serializer GTest::gtest_main)
+target_link_libraries(serializer_ut PRIVATE ecpp::serializer GTest::gtest_main GTest::gmock)
 target_link_options(serializer_ut PUBLIC -pthread)
 target_compile_options(
   serializer_ut
@@ -33,8 +33,6 @@ target_compile_options(
           -Wmissing-declarations
           -Wdisabled-optimization
           -Wold-style-cast
-          -Wno-gnu-zero-variadic-macro-arguments
-          -fconcepts-diagnostics-depth=2
 )
 
 include(GoogleTest)
